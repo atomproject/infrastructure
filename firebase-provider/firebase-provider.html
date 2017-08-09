@@ -1,0 +1,122 @@
+<link rel="import" href="https://polygit.org/polymer+v1.8/components/polymer/polymer.html">
+
+<script src="https://www.gstatic.com/firebasejs/4.2.0/firebase.js"></script>
+
+<dom-module id='firebase-provider'>
+    <template>
+
+    </template>
+
+    <script>
+
+        (function(){
+            Polymer({
+                is : 'firebase-provider',
+                properties : {
+                    isUserAuthorized : {
+                        type : Boolean,
+                        notify : true,
+                        value : false
+                    },
+                    user : {
+                        type : Object,
+                        notify : true,
+                        value : null
+                    },
+                    isUserSignedIn : {
+                        type : Boolean,
+                        notify : true,
+                        value : false
+                    },
+                    firebaseConfig : {
+                        type : Object,
+                        observer : '__initializeFirebase'
+                    },
+                    isInitialized : {
+                        type : Boolean,
+                        value :  false
+                    }
+                },
+                __keys : {
+                    isUserAuthorized : 'isUserAuthorized',
+                    authorizedUsers : 'authorizedUsers',
+                    user : 'user',
+                    isUserSignedIn : 'isUserSignedIn',
+                    isInitialized : 'isInitialized'
+                },
+                __initializeFirebase : function(){
+                    if(!this.firebaseConfig)
+                        return;
+
+                    if(this.isInitialized)
+                        throw "config should be injected just once";
+
+                    firebase.initializeApp(this.firebaseConfig);
+
+                    var that = this;
+                    firebase.auth().onAuthStateChanged(function(user){
+                        that.__installUser(user);
+                    });
+
+                    this.set(this.__keys.isInitialized, true);
+                },
+                __getCurrentSignedInUser : function(){
+                    return firebase.auth().currentUser;
+                },
+                __doSignIn : function(){
+                    var provider = new firebase.auth.GoogleAuthProvider();
+                    provider.addScope('https://www.googleapis.com/auth/userinfo.profile');
+                    return firebase.auth().signInWithPopup(provider).then(function(result) {
+                        return result.user;
+                    });
+                },
+                __installUser : function(user){
+                    if(!user){
+                        this.set(this.__keys.user, null);
+                        this.set(this.__keys.isUserSignedIn, false);
+                        this.set(this.__keys.isUserAuthorized, false);
+                        return;
+                    }
+
+                    this.set(this.__keys.user, user);
+                    this.set(this.__keys.isUserSignedIn, true);
+                    
+                    var that = this;
+                    return this.__isUserAuthorized(user.email)
+                    .then(function(isAuthorized){
+                        that.set(that.__keys.isUserAuthorized, isAuthorized);
+                    });
+                },
+                signIn : function(){
+                    var that = this;
+                    var currentUser = this.__getCurrentSignedInUser();
+                    
+                    if(currentUser)
+                        return;
+                    
+                    that.__doSignIn()
+                    .catch(function(error) {
+                        console.log(error);
+                    });
+                },
+                __isUserAuthorized : function(email){
+                    return this.getDataAsync(this.__keys.authorizedUsers)
+                    .then(function(authorizedUserEmails){
+                        return authorizedUserEmails.indexOf(email) >= 0;
+                    });
+                },
+                signOut : function(){
+                    firebase.auth().signOut();
+                },
+                getDataAsync : function(path){
+                    return firebase.database().ref(path)
+                    .once('value')
+                    .then(function(snapshot){
+                        var val = snapshot.val();
+                        return val;
+                    });
+                }
+            });
+        })();
+    </script>
+</dom-module>
